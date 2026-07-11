@@ -17,14 +17,14 @@ const PPMCalculator = {
    */
   start(config) {
     this.config = config;
-    this.currentPPM = 10.0;
-    this.maxPPM = 10.0;
+    this.currentPPM = 1.0;
+    this.maxPPM = 1.0;
     this.mitigationActive = false;
     this.elapsedSeconds = 0;
     this.isFinished = false;
 
     // Reset interface elements
-    document.getElementById('hud-ppm').textContent = '10.0';
+    document.getElementById('hud-ppm').textContent = '1.0';
     document.getElementById('hud-timer').textContent = '00:00';
     
     // Set HUD labels according to gas type
@@ -103,40 +103,37 @@ const PPMCalculator = {
 
     // 2. Hitung Emisi Gas & Efek Mitigasi K3
     const baseEmissionRate = this.config.emission_rate;
-    const ppeFactor = this.config.is_ppe_correct ? 1.0 : 10.0; // 10x penalty if wrong PPE
+    const ppeFactor = this.config.is_ppe_correct ? 1.0 : 2.0; // 2x penalty jika APD salah (lebih masuk akal)
     
     let netEmissionRate = baseEmissionRate;
     if (this.mitigationActive) {
       if (this.config.gas_type === 'amonia') {
-        netEmissionRate = Math.max(baseEmissionRate - 2.0, 0.1);
+        netEmissionRate = 0.0; // Water spray menghentikan emisi baru
       } else {
         netEmissionRate = 0.0; // capping kit halts chlorine emission
       }
     }
 
-    // Kenaikan dasar PPM
-    let ppmIncrease = netEmissionRate * ppeFactor * deltaTime * 60; // Dikalikan 60 untuk skala menit
+    // Kenaikan PPM per detik (dibatasi agar tidak meledak)
+    let ppmIncrease = netEmissionRate * ppeFactor * deltaTime * 10;
 
-    // 3. Modulasi PPM berdasarkan jarak (Local Exposure)
+    // 3. Modulasi PPM berdasarkan jarak (lebih lunak)
     let distanceMultiplier = 1.0;
     if (distanceToSource < 1.0) {
-      distanceMultiplier = 3.5 / Math.max(distanceToSource, 0.35);
-    } else if (distanceToSource < 2.5) {
-      distanceMultiplier = 1.8 / distanceToSource;
+      distanceMultiplier = 2.0;
+    } else if (distanceToSource < 2.0) {
+      distanceMultiplier = 1.0;
     } else {
-      distanceMultiplier = 0.8 / Math.max(distanceToSource - 1.5, 0.1);
+      distanceMultiplier = 0.5;
     }
 
     // Terapkan modulasi jarak ke konsentrasi PPM
     this.currentPPM += ppmIncrease * distanceMultiplier;
     
-    // Jika mitigasi aktif, PPM perlahan turun
+    // Jika mitigasi aktif, PPM turun CEPAT (bisa padam ~30 detik)
     if (this.mitigationActive) {
-      if (this.config.gas_type === 'amonia') {
-        this.currentPPM -= 1.8 * 60 * deltaTime; // air melarutkan gas
-      } else {
-        this.currentPPM -= 0.6 * 60 * deltaTime; // dispersi setelah dicapping
-      }
+      const decayRate = this.config.gas_type === 'amonia' ? 8.0 : 5.0; // PPM/detik
+      this.currentPPM -= decayRate * deltaTime;
     }
 
     this.currentPPM = Math.max(this.currentPPM, 1.0); // ambient minimum 1.0 PPM
@@ -163,8 +160,8 @@ const PPMCalculator = {
       const reason = `Konsentrasi gas ${gasName} terhirup mencapai ${Math.round(this.currentPPM)} PPM, melebihi batas fatal paparan jangka pendek (IDLH) K3 sebesar ${fatalLimit} PPM. Pengguna kehilangan kesadaran karena keracunan akut.`;
       this.finishSimulation('failed', reason);
     } 
-    // Batas waktu bertahan simulasi adalah 120 detik (~2 menit) untuk membuktikan mitigasi berhasil
-    else if (this.elapsedSeconds >= 120) {
+    // Batas waktu bertahan simulasi adalah 20 detik
+    else if (this.elapsedSeconds >= 20) {
       this.finishSimulation('survived');
     }
   },
@@ -175,100 +172,31 @@ const PPMCalculator = {
   finishSimulation(status, failureReason = null) {
     this.isFinished = true;
 
-    // Hentikan Loop render/navigasi Three.js
-    if (window.ARCore && window.ARCore.stopSimulation) {
+    // Hentikan render loop
+    if (window.ARCore?.stopSimulation) {
       window.ARCore.stopSimulation();
     }
 
-    // Sembunyikan instruksi HUD
-    document.getElementById('ar-instructions').style.display = 'none';
+    // Simpan hasil ke localStorage
+    const result = {
+      status,
+      failure_reason: failureReason,
+      gas_type:       this.config.gas_type,
+      ppe_selected:   this.config.ppe_selected,
+      mitigation:     this.config.mitigation_action,
+      duration:       Math.round(this.elapsedSeconds),
+      max_ppm:        Math.round(this.maxPPM),
+      final_ppm:      Math.round(this.currentPPM),
+      is_practice:    this.config.is_practice
+    };
+    localStorage.setItem('simulation_result', JSON.stringify(result));
 
-    // Konfigurasi Modal Hasil
-    const resultOverlay = document.getElementById('result-overlay');
-    const resultIcon = document.getElementById('result-icon-container');
-    const resultTitle = document.getElementById('result-title');
-    const resultSubtitle = document.getElementById('result-subtitle');
-    const reasonBox = document.getElementById('res-failure-reason-box');
-
-    // Mengisi detail metrik log hasil
-    document.getElementById('res-gas-type').textContent = this.config.gas_type === 'amonia' ? 'Amonia (NH₃)' : 'Klorin (Cl₂)';
-    document.getElementById('res-duration').textContent = `${Math.round(this.elapsedSeconds)} Detik`;
-    document.getElementById('res-ppe-selected').textContent = this.config.ppe_selected;
-    document.getElementById('res-mitigation').textContent = this.config.gas_type === 'amonia' ? 'Water Spray' : 'Capping Kit';
-
-    if (status === 'survived') {
-      // Sukses bertahan
-      resultTitle.textContent = 'Simulasi Berhasil!';
-      resultSubtitle.textContent = 'Anda sukses melakukan mitigasi kebocoran gas berbahaya secara K3.';
-      resultTitle.style.color = '#64FFB4'; // emerald green
-      resultIcon.className = 'w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-5 border-4 border-teal-500 bg-teal-500/10 text-teal-400';
-      resultIcon.innerHTML = '<i data-lucide="check" class="w-8 h-8"></i>';
-      reasonBox.classList.add('hidden');
-    } else {
-      // Gagal / Fatal
-      resultTitle.textContent = 'Simulasi Gagal (Fatal)';
-      resultSubtitle.textContent = 'Tindakan mitigasi lambat atau paparan gas terlalu tinggi.';
-      resultTitle.style.color = '#FF4444'; // rose red
-      resultIcon.className = 'w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-5 border-4 border-rose-500 bg-rose-500/10 text-rose-450';
-      resultIcon.innerHTML = '<i data-lucide="skull" class="w-8 h-8"></i>';
-      
-      document.getElementById('res-failure-reason').textContent = failureReason;
-      reasonBox.classList.remove('hidden');
-    }
-
-    resultOverlay.style.display = 'flex';
-    lucide.createIcons();
-
-    // Bind Event klik tombol submit log
-    const submitBtn = document.getElementById('btn-submit-log');
-    // Bersihkan listener sebelumnya jika ada
-    const newSubmitBtn = submitBtn.cloneNode(true);
-    submitBtn.parentNode.replaceChild(newSubmitBtn, submitBtn);
-
-    const isPractice = this.config.is_practice;
-
-    if (isPractice) {
-      newSubmitBtn.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i><span>Selesai Latihan & Kembali</span>';
-      
-      // Sembunyikan tombol "Tolak & Kembali" jika latihan
-      const cancelButton = newSubmitBtn.nextElementSibling;
-      if (cancelButton) {
-        cancelButton.style.display = 'none';
-      }
-      
-      lucide.createIcons();
-      
-      newSubmitBtn.addEventListener('click', () => {
-        window.location.href = 'dashboard.html';
-      });
-    } else {
-      newSubmitBtn.addEventListener('click', async () => {
-        newSubmitBtn.disabled = true;
-        newSubmitBtn.innerHTML = '<span>Mengirim Laporan...</span>';
-
-        const payload = {
-          gas_type: this.config.gas_type,
-          ppe_selected: this.config.ppe_selected,
-          mitigation_action: this.config.mitigation_action,
-          duration: Math.round(this.elapsedSeconds),
-          max_ppm: Math.round(this.maxPPM),
-          final_ppm: Math.round(this.currentPPM),
-          status: status,
-          failure_reason: failureReason
-        };
-
-        try {
-          await API.simulation.submit(payload);
-          window.location.href = 'dashboard.html';
-        } catch (err) {
-          alert(`Gagal mengirim data simulasi: ${err.message}`);
-          newSubmitBtn.disabled = false;
-          newSubmitBtn.innerHTML = '<i data-lucide="upload-cloud" class="w-5 h-5"></i><span>Kirim Laporan Simulasi</span>';
-          lucide.createIcons();
-        }
-      });
-    }
+    // Redirect ke halaman hasil
+    setTimeout(() => {
+      window.location.href = 'result.html';
+    }, 400); // sedikit delay agar render stop dahulu
   }
+
 };
 
 // Expose globally

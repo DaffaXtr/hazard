@@ -24,39 +24,33 @@ const GasSystem = {
     this.timeElapsed = 0;
     this.mitigationFactor = 1.0;
 
-    const particleCount = 2000;
+    const particleCount = 800;
     this.particleGeometry = new THREE.BufferGeometry();
 
     const positions = new Float32Array(particleCount * 3);
     const velocities = new Float32Array(particleCount * 3);
     const sizes = new Float32Array(particleCount);
 
-    // Dapatkan konfigurasi densitas sesuai tipe gas
-    // Amonia: gas ringan, mengembang naik dengan cepat
-    // Klorin: gas berat, mengendap di bawah menyebar mendatar
     const isAmonia = this.gasType === 'amonia';
 
     for (let i = 0; i < particleCount; i++) {
-      // Posisi awal di lubang tangki bocor (sedikit di atas alas tangki)
-      positions[i * 3] = position.x;
-      positions[i * 3 + 1] = position.y + 0.45;
-      positions[i * 3 + 2] = position.z;
+      // Posisi awal di lubang tangki bocor (valve)
+      positions[i * 3]     = position.x + (Math.random() - 0.5) * 0.05;
+      positions[i * 3 + 1] = position.y + 0.45 + Math.random() * 0.15;
+      positions[i * 3 + 2] = position.z + (Math.random() - 0.5) * 0.05;
 
-      // Kecepatan semburan acak
       if (isAmonia) {
-        // Amonia: Semprotan ke atas, menyebar melebar
-        velocities[i * 3] = (Math.random() - 0.5) * 0.4;     // X spread
-        velocities[i * 3 + 1] = 0.5 + Math.random() * 0.6;   // Y rise (fast)
-        velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.4; // Z spread
+        velocities[i * 3]     = (Math.random() - 0.5) * 0.5;
+        velocities[i * 3 + 1] = 0.4 + Math.random() * 0.8;
+        velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.5;
       } else {
-        // Klorin: Semprotan mendatar berat, sedikit naik lalu mengendap mendatar
-        velocities[i * 3] = (Math.random() - 0.5) * 0.8;     // X spread (wide)
-        velocities[i * 3 + 1] = 0.1 + Math.random() * 0.25;  // Y rise (slow)
-        velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.8; // Z spread (wide)
+        velocities[i * 3]     = (Math.random() - 0.5) * 1.0;
+        velocities[i * 3 + 1] = 0.05 + Math.random() * 0.2;
+        velocities[i * 3 + 2] = (Math.random() - 0.5) * 1.0;
       }
 
-      // Ukuran partikel acak
-      sizes[i] = 12.0 + Math.random() * 18.0;
+      // Ukuran partikel disesuaikan agar tidak terlalu tipis setelah dikurangi jumlahnya
+      sizes[i] = 8.0 + Math.random() * 7.0;
     }
 
     this.particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -112,7 +106,7 @@ const GasSystem = {
         gl_Position = projectionMatrix * mvPosition;
         
         // Ukuran mengecil perlahan seiring bertambah tinggi (memudar)
-        gl_PointSize = aSize * (300.0 / -mvPosition.z) * (1.0 - vAge);
+        gl_PointSize = aSize * (200.0 / -mvPosition.z) * (1.0 - vAge * 0.7);
       }
     `;
 
@@ -127,8 +121,8 @@ const GasSystem = {
         float dist = distance(gl_PointCoord, vec2(0.5));
         if (dist > 0.5) discard;
 
-        // Formula alpha decay: memudar di tepi partikel dan memudar di ujung plume (vAge)
-        float alpha = smoothstep(0.5, 0.1, dist) * 0.45 * (1.0 - vAge) * uOpacityFactor;
+        // Alpha lebih tipis per partikel, tapi karena banyak partikel total terlihat tebal
+        float alpha = smoothstep(0.5, 0.0, dist) * 0.35 * (1.0 - vAge * 0.8) * uOpacityFactor;
         gl_FragColor = vec4(uColor, alpha);
       }
     `;
