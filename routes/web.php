@@ -25,6 +25,10 @@ Route::get('/simulation.html', function () {
     return view('student.simulation');
 });
 
+Route::get('/result.html', function () {
+    return view('student.result');
+});
+
 // Authentication routes
 Route::get('/login', [WebAuthController::class, 'showLogin'])->name('login');
 Route::post('/login', [WebAuthController::class, 'login']);

@@ -188,7 +188,7 @@
   <!-- HUD Instruction overlay -->
   <div class="barricade-indicator" id="ar-instructions">
     <div class="barricade-icon animate-pulse" id="instruction-icon">📱</div>
-    <span id="instruction-text">Mendeteksi permukaan... Gerakkan ponsel Anda ke kiri dan kanan.</span>
+    <span id="instruction-text">Mendeteksi permukaan... Gerakan kamera ke kiri dan ke kanan.</span>
   </div>
 
   <!-- Mode Fallback Indicator (Floating badge in corner) -->
