@@ -1,5 +1,9 @@
 <?php
 
+// Fix Vercel serverless request pathing
+$_SERVER['SCRIPT_NAME'] = '/index.php';
+$_SERVER['SCRIPT_FILENAME'] = __DIR__ . '/../public/index.php';
+
 // Prepare required writable directories in /tmp for Vercel serverless environment
 $dirs = [
     '/tmp/storage/app/public',
